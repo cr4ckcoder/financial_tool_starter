@@ -1,0 +1,31 @@
+[tool.poetry]
+name = "financial_tool"
+version = "0.1.0"
+description = "Starter scaffold for Financial Statement Generation Platform (FastAPI + SQLAlchemy)"
+authors = ["Your Name <you@example.com>"]
+packages = [{ include = "app" }]
+
+[tool.poetry.dependencies]
+python = "^3.11"
+fastapi = "^0.100.0"
+uvicorn = {extras = ["standard"], version = "^0.23.0"}
+SQLAlchemy = "^2.0"
+databases = "^0.7.4"
+pydantic = "^2.3"
+pydantic-settings = "^2.1"
+jinja2 = "^3.1"
+weasyprint = "^57.0"
+pandas = "^2.3"
+openpyxl = "^3.1"
+python-dotenv = "^1.0"
+alembic = "^1.11"
+psycopg2-binary = "^2.9"
+
+[tool.poetry.dev-dependencies]
+pytest = "^8.4"
+ruff = "^0.21"
+black = "^24.3"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
