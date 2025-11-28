@@ -14,7 +14,7 @@ from openpyxl.styles import Font, Alignment
 from app.models.domain import ReportTemplate, FinancialWork
 from app.services.statement_generation_service import calculate_statement_data
 
-# --- HTML Template ---
+# --- HTML Template (Unchanged) ---
 PDF_HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html>
@@ -22,46 +22,20 @@ PDF_HTML_TEMPLATE = """
     <style>
         @page { size: A4; margin: 1cm; }
         body { font-family: "Times New Roman", Times, serif; font-size: 11px; line-height: 1.3; }
-        
-        /* Header Section */
         .company-header { text-align: center; margin-bottom: 10px; }
         .company-name { font-size: 16px; font-weight: bold; text-transform: uppercase; letter-spacing: 1px; }
         .report-name { font-size: 14px; font-weight: bold; margin-top: 5px; text-transform: uppercase; }
         .currency-note { font-size: 10px; font-style: italic; margin-top: 5px; margin-bottom: 15px; text-align: center;}
-        
-        /* Table Layout */
         table { width: 100%; border-collapse: collapse; margin-bottom: 10px; }
-        
-        /* Table Headers */
-        th { 
-            border-top: 1px solid #000; 
-            border-bottom: 1px solid #000; 
-            padding: 8px 5px; 
-            font-weight: bold; 
-            vertical-align: middle;
-        }
-        
+        th { border-top: 1px solid #000; border-bottom: 1px solid #000; padding: 8px 5px; font-weight: bold; vertical-align: middle; }
         td { padding: 5px 5px; vertical-align: top; }
-        
-        /* Columns */
         .col-particulars { width: 50%; text-align: left; }
         .col-note { width: 10%; text-align: center; }
         .col-amount { width: 20%; text-align: right; }
-        
-        /* Styles */
         .title-row td { font-weight: bold; padding-top: 15px; padding-bottom: 5px; }
-        .subtotal-row td { 
-            border-top: 1px solid #000; 
-            border-bottom: 1px solid #000; 
-            font-weight: bold; 
-            padding-top: 8px; 
-            padding-bottom: 8px;
-        }
+        .subtotal-row td { border-top: 1px solid #000; border-bottom: 1px solid #000; font-weight: bold; padding-top: 8px; padding-bottom: 8px; }
         .value { font-family: monospace; font-size: 11px; }
-        
-        /* Notes Section */
         .page-break { page-break-before: always; }
-        .notes-title { font-size: 14px; font-weight: bold; margin-bottom: 15px; border-bottom: 1px solid #000; padding-bottom: 5px; }
         .note-block { margin-bottom: 20px; page-break-inside: avoid; }
         .note-header { font-weight: bold; font-size: 12px; margin-bottom: 5px; }
         .note-row { display: flex; justify-content: space-between; padding: 2px 0; }
@@ -70,22 +44,14 @@ PDF_HTML_TEMPLATE = """
     </style>
 </head>
 <body>
-    
     {% for item in template_def %}
-        
-        {# --- HEADER BLOCK (New Page) --- #}
         {% if item.type == 'header_block' %}
-            
-            {% if not loop.first %}
-                </tbody></table><div class="page-break"></div>
-            {% endif %}
-            
+            {% if not loop.first %}</tbody></table><div class="page-break"></div>{% endif %}
             <div class="company-header">
                 <div class="company-name">{{ company_name }}</div>
                 <div class="report-name">{{ item.text }}</div>
                 <div class="currency-note">(All amounts are in Indian Rupees unless otherwise stated)</div>
             </div>
-            
             <table>
                 <thead>
                     <tr>
@@ -96,45 +62,30 @@ PDF_HTML_TEMPLATE = """
                     </tr>
                 </thead>
                 <tbody>
-
-        {# --- LINE ITEM --- #}
         {% elif item.type == 'financial_line_item' %}
             {% set val = data.get(item.account_head_id, 0.0) %}
-            
-            {# Render if value is NOT zero (absolute > 0.01) OR if 'mandatory' is true #}
             {% if (val | abs > 0.01) or item.mandatory %}
             <tr>
                 <td style="padding-left: 20px;">{{ item.label }}</td>
                 <td class="col-note">{{ note_map.get(item.note_ref, '') }}</td>
-                {# FORCE POSITIVE DISPLAY using abs #}
                 <td class="col-amount value">{{ "{:,.2f}".format(val | abs) }}</td>
                 <td class="col-amount value">0.00</td> 
             </tr>
             {% endif %}
-
-        {# --- SUBTOTAL --- #}
         {% elif item.type == 'subtotal' %}
             {% set val = data.get(item.id, 0.0) %}
-            
             {% if (val | abs > 0.01) or item.mandatory %}
             <tr class="subtotal-row">
                 <td>{{ item.label }}</td>
                 <td></td>
-                {# FORCE POSITIVE DISPLAY using abs #}
                 <td class="col-amount value">{{ "{:,.2f}".format(val | abs) }}</td>
                 <td class="col-amount value">0.00</td>
             </tr>
             {% endif %}
-
-        {# --- INNER TITLE --- #}
         {% elif item.type == 'title' %}
-            <tr class="title-row">
-                <td colspan="4">{{ item.text }}</td>
-            </tr>
+            <tr class="title-row"><td colspan="4">{{ item.text }}</td></tr>
         {% endif %}
-        
     {% endfor %}
-    
     </tbody></table>
 
     {% if notes_data %}
@@ -144,24 +95,19 @@ PDF_HTML_TEMPLATE = """
             <div class="report-name">NOTES TO FINANCIAL STATEMENTS</div>
             <div class="currency-note">(All amounts are in Indian Rupees unless otherwise stated)</div>
         </div>
-
         {% for note in notes_data %}
             <div class="note-block">
                 <div class="note-header">Note {{ note.ref }}: {{ note.title }}</div>
-                
                 {% for child in note.children %}
                 <div class="note-row">
                     <span>{{ child.name }}</span>
                     <span class="dotted"></span>
-                    {# FORCE POSITIVE DISPLAY using abs #}
                     <span class="value">{{ "{:,.2f}".format(child.amount | abs) }}</span>
                 </div>
                 {% endfor %}
-                
                 <div class="note-row total">
                     <span>Total</span>
                     <span></span>
-                    {# FORCE POSITIVE DISPLAY using abs #}
                     <span class="value">{{ "{:,.2f}".format(note.total | abs) }}</span>
                 </div>
             </div>
@@ -197,7 +143,7 @@ async def generate_report(
 
     filename = f"{template.name.replace(' ', '_')}_{work.id}.{format}"
 
-    # --- DYNAMIC NOTE LOGIC ---
+    # Notes Logic
     notes_data = []
     note_ref_map = {}
     note_counter = 3
@@ -206,10 +152,7 @@ async def generate_report(
         if item.get('type') == 'financial_line_item' and item.get('note_ref'):
             head_id = item.get('account_head_id')
             val = balances.get(head_id, 0.0)
-            
-            # Hide note if value is zero (ignore mandatory flag for notes to keep them clean)
-            if abs(val) < 0.01:
-                continue
+            if abs(val) < 0.01: continue
 
             children_ids = children_map.get(head_id, [])
             children_details = []
@@ -237,42 +180,30 @@ async def generate_report(
     if format == 'pdf':
         return _render_pdf(work, template_def, balances, notes_data, note_ref_map), filename
     elif format == 'xlsx':
-        return _render_excel(work, template_def, balances, note_ref_map), filename
+        # Pass notes_data to Excel renderer now
+        return _render_excel(work, template_def, balances, notes_data, note_ref_map), filename
     else:
         raise HTTPException(status_code=400, detail="Unsupported format")
 
 def _calculate_derived_balances(balances: dict):
-    # Category IDs: 1=ASSET, 4=INCOME, 11=EXPENSE, 61=LIABILITY, 81=EQUITY
+    # Same logic as before
     total_assets = balances.get(1, 0.0)
     total_liabilities = balances.get(61, 0.0)
     total_equity = balances.get(81, 0.0)
     total_income = balances.get(4, 0.0)
     total_expenses = balances.get(11, 0.0)
     
-    # Correct Logic for Signed Accounting Data:
-    # Assets are Debit (+), Liabilities/Equity are Credit (-)
-    # "Total Eq & Liab" should be magnitude sum: abs(Liab) + abs(Equity)
-    # Since they are negative, summing them gives negative total. abs() fixes display.
     balances[999] = total_equity + total_liabilities
     balances[1000] = total_assets
-    
     balances[1001] = total_income
     balances[1002] = total_expenses
-    
-    # Profit = Income (Credit, -) + Expense (Debit, +)
-    # Example: Income -200, Expense +150 => Net -50 (Profit)
-    # We maintain the sign here, abs() handles display
-    pbt = total_income + total_expenses 
+    pbt = total_income + total_expenses
     balances[1003] = pbt
 
-    # Cash Flow Logic (Simplified)
     depreciation = balances.get(9991, 0.0)
     interest_exp = balances.get(38, 0.0)
     interest_inc = balances.get(6, 0.0)
     
-    # Operating Profit: Start with PBT (Net -50). 
-    # To get "Cash Profit", we remove non-cash items.
-    # Logic: PBT + Depr + IntExp - IntInc
     op_profit = pbt + depreciation + interest_exp - interest_inc
     balances[2001] = op_profit
 
@@ -307,65 +238,124 @@ def _render_pdf(work, template_def, data, notes_data, note_map):
     )
     return HTML(string=html_string).write_pdf()
 
-def _render_excel(work, template_def, data, note_map):
+def _render_excel(work, template_def, data, notes_data, note_map):
     wb = Workbook()
-    ws = wb.active
-    ws.title = "Financials"
-    row_idx = 1
+    # Remove default sheet
+    default_ws = wb.active
+    wb.remove(default_ws)
     
+    # Internal helper to set up a new sheet
+    def create_sheet(title):
+        # Excel sheet names max 31 chars, forbidden chars: : \ / ? * [ ]
+        safe_title = title.replace("STATEMENT", "").strip()[:30]
+        ws = wb.create_sheet(title=safe_title)
+        
+        # Company Header
+        ws.merge_cells('A1:D1')
+        ws['A1'] = work.company.legal_name
+        ws['A1'].font = Font(size=14, bold=True)
+        ws['A1'].alignment = Alignment(horizontal='center')
+        
+        # Report Title
+        ws.merge_cells('A2:D2')
+        ws['A2'] = title
+        ws['A2'].font = Font(bold=True)
+        ws['A2'].alignment = Alignment(horizontal='center')
+        
+        # Columns
+        ws['A4'] = "Particulars"
+        ws['B4'] = "Note No."
+        ws['C4'] = "31st March 2024"
+        ws['D4'] = "31st March 2023"
+        for c in ['A', 'B', 'C', 'D']:
+            ws[f'{c}4'].font = Font(bold=True)
+            ws[f'{c}4'].alignment = Alignment(horizontal='center')
+            ws.column_dimensions[c].width = 15 if c != 'A' else 50
+            
+        return ws, 5 # Return sheet and starting row index
+
+    # --- Render Statements ---
+    ws = None
+    row_idx = 5
+    
+    # Check if we have header blocks (Full Set)
+    has_header_blocks = any(i.get('type') == 'header_block' for i in template_def)
+    if not has_header_blocks:
+        ws, row_idx = create_sheet("Financial Statement")
+
     for item in template_def:
+        # Create New Sheet on Header Block
         if item.get('type') == 'header_block':
-            row_idx += 2
-            ws.merge_cells(f'A{row_idx}:D{row_idx}')
-            ws[f'A{row_idx}'] = work.company.legal_name
-            ws[f'A{row_idx}'].font = Font(size=14, bold=True)
-            ws[f'A{row_idx}'].alignment = Alignment(horizontal='center')
-            row_idx += 1
-            
-            ws.merge_cells(f'A{row_idx}:D{row_idx}')
-            ws[f'A{row_idx}'] = item.get('text')
-            ws[f'A{row_idx}'].font = Font(bold=True)
-            ws[f'A{row_idx}'].alignment = Alignment(horizontal='center')
-            row_idx += 2
-            
-            ws[f'A{row_idx}'] = "Particulars"
-            ws[f'B{row_idx}'] = "Note No."
-            ws[f'C{row_idx}'] = "31st March 2024"
-            ws[f'D{row_idx}'] = "31st March 2023"
-            for c in ['A', 'B', 'C', 'D']:
-                ws[f'{c}{row_idx}'].font = Font(bold=True)
-                ws[f'{c}{row_idx}'].alignment = Alignment(horizontal='center')
-            row_idx += 1
+            ws, row_idx = create_sheet(item.get('text'))
             continue
 
+        # Zero check
         if item.get('type') in ['financial_line_item', 'subtotal']:
             val_check = data.get(item.get('account_head_id') or item.get('id'), 0.0)
             if abs(val_check) < 0.01 and not item.get('mandatory'): continue
+
+        if not ws: # Fallback
+            ws, row_idx = create_sheet("Report")
 
         if item.get('type') == 'title':
             ws[f'A{row_idx}'] = item.get('text')
             ws[f'A{row_idx}'].font = Font(bold=True, underline="single")
             row_idx += 1
+            
         elif item.get('type') == 'financial_line_item':
             ws[f'A{row_idx}'] = item.get('label')
             static_ref = item.get('note_ref', '')
             ws[f'B{row_idx}'] = note_map.get(static_ref, '')
+            ws[f'B{row_idx}'].alignment = Alignment(horizontal='center')
+            
             val = data.get(item.get('account_head_id'), 0.0)
-            ws[f'C{row_idx}'] = abs(val) # FORCE POSITIVE
+            ws[f'C{row_idx}'] = abs(val)
             ws[f'D{row_idx}'] = 0.00
             ws[f'C{row_idx}'].number_format = '#,##0.00'
             ws[f'D{row_idx}'].number_format = '#,##0.00'
             row_idx += 1
+            
         elif item.get('type') == 'subtotal':
             ws[f'A{row_idx}'] = item.get('label')
             ws[f'A{row_idx}'].font = Font(bold=True)
             val = data.get(item.get('id'), 0.0)
-            ws[f'C{row_idx}'] = abs(val) # FORCE POSITIVE
+            ws[f'C{row_idx}'] = abs(val)
             ws[f'D{row_idx}'] = 0.00
             ws[f'C{row_idx}'].font = Font(bold=True)
             ws[f'C{row_idx}'].number_format = '#,##0.00'
             ws[f'D{row_idx}'].number_format = '#,##0.00'
             row_idx += 1
+
+    # --- Render Notes Sheet ---
+    if notes_data:
+        ws = wb.create_sheet(title="Notes")
+        ws.column_dimensions['A'].width = 50
+        ws.column_dimensions['B'].width = 20
+        
+        ws.merge_cells('A1:B1')
+        ws['A1'] = "NOTES TO FINANCIAL STATEMENTS"
+        ws['A1'].font = Font(size=14, bold=True)
+        ws['A1'].alignment = Alignment(horizontal='center')
+        
+        row_idx = 3
+        for note in notes_data:
+            ws[f'A{row_idx}'] = f"Note {note['ref']}: {note['title']}"
+            ws[f'A{row_idx}'].font = Font(bold=True)
+            row_idx += 1
+            
+            for child in note['children']:
+                ws[f'A{row_idx}'] = child['name']
+                ws[f'B{row_idx}'] = abs(child['amount'])
+                ws[f'B{row_idx}'].number_format = '#,##0.00'
+                row_idx += 1
+                
+            ws[f'A{row_idx}'] = "Total"
+            ws[f'A{row_idx}'].font = Font(bold=True)
+            ws[f'A{row_idx}'].alignment = Alignment(horizontal='right')
+            ws[f'B{row_idx}'] = abs(note['total'])
+            ws[f'B{row_idx}'].font = Font(bold=True)
+            ws[f'B{row_idx}'].number_format = '#,##0.00'
+            row_idx += 2
 
     buffer = io.BytesIO()
     wb.save(buffer)
