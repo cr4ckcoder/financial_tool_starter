@@ -1,44 +1,50 @@
 # app/services/statement_generation_service.py
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select, func, and_
 from typing import Dict, List, Tuple
-from app.models.domain import Account, MappedLedgerEntry, TrialBalanceEntry
+from app.models.domain import Account, MappedLedgerEntry, TrialBalanceEntry, WorkUnit
 
 async def calculate_statement_data(
     session: AsyncSession, 
     work_id: int
 ) -> Tuple[Dict[int, float], Dict[int, Account], Dict[int, List[int]]]:
-    """
-    Aggregates financial data.
-    Returns:
-      1. balances: {account_id: total_amount}
-      2. account_map: {account_id: AccountObject} (for names/types)
-      3. children_map: {parent_id: [child_id, child_id...]} (for hierarchy)
-    """
-    # 1. Fetch all accounts
-    # We fetch objects to get names and hierarchy
+    
+    # 1. Fetch Accounts & Hierarchy (Cached)
     all_accounts = (await session.execute(select(Account))).scalars().all()
     account_map = {acc.id: acc for acc in all_accounts}
-    
-    # 2. Build children map
     children_map: Dict[int, List[int]] = {}
     for acc in all_accounts:
         if acc.parent_id:
-            if acc.parent_id not in children_map:
-                children_map[acc.parent_id] = []
-            children_map[acc.parent_id].append(acc.id)
+            children_map.setdefault(acc.parent_id, []).append(acc.id)
     
-    # Initialize balances
     balances: Dict[int, float] = {acc.id: 0.0 for acc in all_accounts}
 
-    # 3. Aggregate Mapped Data (The "Leaf" Nodes)
+    # 2. Identify Latest Versions for this Work
+    subq = (
+        select(
+            TrialBalanceEntry.work_unit_id,
+            func.max(TrialBalanceEntry.version_number).label("max_ver")
+        )
+        .join(WorkUnit, TrialBalanceEntry.work_unit_id == WorkUnit.id)
+        .where(WorkUnit.financial_work_id == work_id)
+        .group_by(TrialBalanceEntry.work_unit_id)
+        .subquery()
+    )
+
+    # 3. Aggregate Data (Consolidated)
     stmt = (
         select(
             MappedLedgerEntry.account_sub_head_id, 
             func.sum(TrialBalanceEntry.closing_balance)
         )
         .join(TrialBalanceEntry, MappedLedgerEntry.trial_balance_entry_id == TrialBalanceEntry.id)
-        .where(TrialBalanceEntry.financial_work_id == work_id)
+        .join(
+            subq, 
+            and_(
+                TrialBalanceEntry.work_unit_id == subq.c.work_unit_id,
+                TrialBalanceEntry.version_number == subq.c.max_ver
+            )
+        )
         .group_by(MappedLedgerEntry.account_sub_head_id)
     )
     
@@ -48,23 +54,17 @@ async def calculate_statement_data(
         if account_id in balances:
             balances[account_id] = float(total)
 
-    # 4. Roll up values
+    # 4. Roll up
     final_balances = {}
-    
     def get_balance(acc_id: int) -> float:
-        if acc_id in final_balances:
-            return final_balances[acc_id]
-        
+        if acc_id in final_balances: return final_balances[acc_id]
         total = balances.get(acc_id, 0.0)
-        
         if acc_id in children_map:
             for child_id in children_map[acc_id]:
                 total += get_balance(child_id)
-        
         final_balances[acc_id] = total
         return total
 
-    # Calculate for all roots to ensure full coverage
     root_accounts = [acc for acc in all_accounts if acc.parent_id is None]
     for root in root_accounts:
         get_balance(root.id)

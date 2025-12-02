@@ -1,12 +1,12 @@
 # app/schemas/report_schemas.py
 from pydantic import BaseModel
-from typing import List, Optional, Union, Dict, Any
+from typing import List, Dict, Any, Optional
 
-# We use a flexible schema for the template definition 
-# because it's a JSON list of various items (titles, lines, subtotals)
 class ReportTemplateCreate(BaseModel):
     name: str
-    statement_type: str  # BALANCE_SHEET, PROFIT_LOSS, etc.
+    statement_type: str
+    # New Field: List of Client Types (e.g. ["PVT_LTD", "LLP"])
+    applicable_client_types: List[str] = [] 
     template_definition: List[Dict[str, Any]]
 
 class ReportTemplateRead(ReportTemplateCreate):

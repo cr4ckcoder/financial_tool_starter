@@ -13,41 +13,49 @@ router = APIRouter()
 
 @router.post("/", response_model=ReportTemplateRead)
 async def create_template(payload: ReportTemplateCreate, db: AsyncSession = Depends(get_db)):
-    # Dump the list of dicts to a JSON string for storage
+    # Serialize lists to JSON strings for SQLite/Text storage
     json_def = json.dumps(payload.template_definition)
+    json_types = json.dumps(payload.applicable_client_types)
     
     new_template = ReportTemplate(
         name=payload.name,
         statement_type=payload.statement_type,
+        applicable_client_types=json_types, # Store as JSON string
         template_definition=json_def
     )
     db.add(new_template)
     await db.commit()
     await db.refresh(new_template)
     
-    # We must manually attach the parsed JSON back for the response model to work
-    # (Because the DB has a string, but the Pydantic model expects a List)
-    response_obj = ReportTemplateRead(
+    return ReportTemplateRead(
         id=new_template.id,
         name=new_template.name,
         statement_type=new_template.statement_type,
+        applicable_client_types=payload.applicable_client_types,
         template_definition=payload.template_definition 
     )
-    return response_obj
 
 @router.get("/", response_model=List[ReportTemplateRead])
 async def list_templates(db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(ReportTemplate))
     templates = result.scalars().all()
     
-    # Convert stored JSON strings back to lists
     output = []
     for t in templates:
+        # Deserialize JSON strings back to Python objects
         t_def = json.loads(t.template_definition) if isinstance(t.template_definition, str) else t.template_definition
+        
+        # Handle applicable_client_types (Safe load)
+        try:
+            t_types = json.loads(t.applicable_client_types) if t.applicable_client_types else []
+        except:
+            t_types = []
+
         output.append(ReportTemplateRead(
             id=t.id, 
             name=t.name, 
-            statement_type=t.statement_type, 
+            statement_type=t.statement_type,
+            applicable_client_types=t_types,
             template_definition=t_def
         ))
     return output

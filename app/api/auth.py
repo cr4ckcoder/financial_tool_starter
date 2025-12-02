@@ -13,7 +13,6 @@ from app.core.security import get_password_hash, verify_password, create_access_
 
 router = APIRouter()
 
-# --- NEW: List all users (Admin only) ---
 @router.get("/users", response_model=List[UserRead])
 async def list_users(
     db: AsyncSession = Depends(get_db),
@@ -22,7 +21,7 @@ async def list_users(
     if current_user.role != UserRole.ADMIN.value:
         raise HTTPException(status_code=403, detail="Not authorized")
     
-    # Fetch users and eagerly load their assigned companies
+    # Eagerly load the relationship to avoid MissingGreenlet error
     result = await db.execute(
         select(User).options(selectinload(User.assigned_companies))
     )
@@ -30,10 +29,12 @@ async def list_users(
 
 @router.post("/register", response_model=UserRead)
 async def register(user: UserCreate, db: AsyncSession = Depends(get_db)):
+    # 1. Check if username exists
     result = await db.execute(select(User).where(User.username == user.username))
     if result.scalars().first():
         raise HTTPException(status_code=400, detail="Username already registered")
     
+    # 2. Create new user
     new_user = User(
         username=user.username,
         hashed_password=get_password_hash(user.password),
@@ -41,8 +42,15 @@ async def register(user: UserCreate, db: AsyncSession = Depends(get_db)):
     )
     db.add(new_user)
     await db.commit()
-    await db.refresh(new_user)
-    return new_user
+    
+    # 3. Re-fetch the user with eager loading
+    # This replaces 'db.refresh' and ensures 'assigned_companies' is loaded
+    # avoiding the MissingGreenlet error during response serialization.
+    query = select(User).options(selectinload(User.assigned_companies)).where(User.id == new_user.id)
+    result = await db.execute(query)
+    created_user = result.scalars().first()
+    
+    return created_user
 
 @router.post("/login", response_model=Token)
 async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: AsyncSession = Depends(get_db)):
@@ -73,7 +81,12 @@ async def assign_company(
     if current_user.role != UserRole.ADMIN.value:
         raise HTTPException(status_code=403, detail="Not authorized")
 
-    user_res = await db.execute(select(User).options(selectinload(User.assigned_companies)).where(User.id == payload.user_id))
+    # Load user with their existing companies
+    user_res = await db.execute(
+        select(User)
+        .options(selectinload(User.assigned_companies))
+        .where(User.id == payload.user_id)
+    )
     target_user = user_res.scalars().first()
     
     comp_res = await db.execute(select(Company).where(Company.id == payload.company_id))

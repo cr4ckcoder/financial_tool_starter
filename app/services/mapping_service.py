@@ -1,21 +1,41 @@
 # app/services/mapping_service.py
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_
+from sqlalchemy import select, and_, func
 from fastapi import HTTPException
-from app.models.domain import TrialBalanceEntry, MappedLedgerEntry, Account, AccountType
+from app.models.domain import TrialBalanceEntry, MappedLedgerEntry, Account, AccountType, WorkUnit
 
 async def get_unmapped_entries(session: AsyncSession, work_id: int):
-    # This query finds entries where the JOIN to MappedLedgerEntry is NULL
+    """
+    Fetch unmapped entries for the LATEST version of ALL units in a work.
+    """
+    
+    # 1. Subquery to find max version per unit
+    # SELECT work_unit_id, MAX(version_number) FROM entries JOIN units WHERE work_id = X GROUP BY unit_id
+    subq = (
+        select(
+            TrialBalanceEntry.work_unit_id,
+            func.max(TrialBalanceEntry.version_number).label("max_ver")
+        )
+        .join(WorkUnit, TrialBalanceEntry.work_unit_id == WorkUnit.id)
+        .where(WorkUnit.financial_work_id == work_id)
+        .group_by(TrialBalanceEntry.work_unit_id)
+        .subquery()
+    )
+
+    # 2. Main Query: Entries matching that Unit+Version, AND unmapped
     query = (
         select(TrialBalanceEntry)
-        .outerjoin(MappedLedgerEntry, TrialBalanceEntry.id == MappedLedgerEntry.trial_balance_entry_id)
-        .where(
+        .join(
+            subq, 
             and_(
-                TrialBalanceEntry.financial_work_id == work_id,
-                MappedLedgerEntry.id.is_(None)  # <--- This line is critical
+                TrialBalanceEntry.work_unit_id == subq.c.work_unit_id,
+                TrialBalanceEntry.version_number == subq.c.max_ver
             )
         )
+        .outerjoin(MappedLedgerEntry, TrialBalanceEntry.id == MappedLedgerEntry.trial_balance_entry_id)
+        .where(MappedLedgerEntry.id.is_(None))
     )
+    
     result = await session.execute(query)
     return result.scalars().all()
 
@@ -24,38 +44,26 @@ async def map_entry_to_account(
     trial_balance_entry_id: int, 
     account_sub_head_id: int
 ):
-    """
-    Creates a link between a raw TB entry and a standardized Account Sub-Head.
-    """
-    # 1. Validate the Target Account
+    # Validate Accounts...
     account_query = select(Account).where(Account.id == account_sub_head_id)
     result = await session.execute(account_query)
     account = result.scalars().first()
     
-    if not account:
-        raise HTTPException(status_code=404, detail="Target account not found")
-    
-    if account.type != AccountType.SUB_HEAD:
-        raise HTTPException(status_code=400, detail="Entries can only be mapped to SUB_HEAD accounts")
+    if not account or account.type != AccountType.SUB_HEAD:
+        raise HTTPException(status_code=400, detail="Invalid Account")
 
-    # 2. Validate the Source Entry
-    entry_query = select(TrialBalanceEntry).where(TrialBalanceEntry.id == trial_balance_entry_id)
-    result = await session.execute(entry_query)
-    entry = result.scalars().first()
-    
+    # Validate Entry
+    entry = await session.get(TrialBalanceEntry, trial_balance_entry_id)
     if not entry:
-        raise HTTPException(status_code=404, detail="Trial Balance entry not found")
+        raise HTTPException(status_code=404, detail="Entry not found")
 
-    # 3. Create or Update Mapping
-    existing_mapping_query = select(MappedLedgerEntry).where(
-        MappedLedgerEntry.trial_balance_entry_id == trial_balance_entry_id
-    )
-    result = await session.execute(existing_mapping_query)
-    existing_mapping = result.scalars().first()
+    # Check existing
+    existing = await session.execute(select(MappedLedgerEntry).where(MappedLedgerEntry.trial_balance_entry_id == trial_balance_entry_id))
+    mapping = existing.scalars().first()
 
-    if existing_mapping:
-        existing_mapping.account_sub_head_id = account_sub_head_id
-        return existing_mapping
+    if mapping:
+        mapping.account_sub_head_id = account_sub_head_id
+        return mapping
     else:
         new_mapping = MappedLedgerEntry(
             trial_balance_entry_id=trial_balance_entry_id,

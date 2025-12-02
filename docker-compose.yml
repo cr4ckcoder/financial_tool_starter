@@ -1,6 +1,6 @@
 version: '3.8'
 services:
-  web:
+  smartfs-web:
     build: .
     ports:
       - "8000:8000"
@@ -9,3 +9,8 @@ services:
     volumes:
       - .:/app
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.smartfs-web-router=Host(`smartfscore.aproitsolutions.in`)"
+      - "traefik.http.routers.smartfs-web-router.entrypoints=web"
+      - "traefik.http.services.smartfs-web-service.loadbalancer.server.port=8000"
