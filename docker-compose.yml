@@ -11,6 +11,15 @@ services:
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.smartfs-web-router=Host(`smartfscore.aproitsolutions.in`)"
-      - "traefik.http.routers.smartfs-web-router.entrypoints=web"
-      - "traefik.http.services.smartfs-web-service.loadbalancer.server.port=8000"
+      - "traefik.http.routers.smartfs-web.rule=Host(`smartfscore.aproitsolutions.in`)"
+      - "traefik.http.routers.smartfs-web.entrypoints=websecure"
+      - "traefik.http.routers.smartfs-web.tls=true"
+      - "traefik.http.routers.smartfs-web.tls.certresolver=letsencrypt"
+      - "traefik.http.services.smartfs-web.loadbalancer.server.port=8000"
+    networks:
+      - web
+
+networks:
+  web:
+    external: true
+
